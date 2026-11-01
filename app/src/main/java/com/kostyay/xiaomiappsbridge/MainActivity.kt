@@ -2,19 +2,21 @@ package com.kostyay.xiaomiappsbridge
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
 import android.os.Bundle
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 class MainActivity : Activity() {
@@ -29,7 +31,10 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        status = label("Starting", 23f, Typeface.BOLD)
+        status = label("Starting", 20f, Typeface.BOLD).apply {
+            maxLines = 5
+            ellipsize = TextUtils.TruncateAt.END
+        }
         adbStatus = label("●  ADB DISCONNECTED", 15f, Typeface.BOLD)
         mappingCount = label(mappingCountLabel(), 17f)
 
@@ -89,6 +94,13 @@ class MainActivity : Activity() {
                 },
                 margins(top = 16)
             )
+            addView(
+                actionButton("Sleep timer / status") {
+                    startActivity(Intent(this@MainActivity, PanelActivity::class.java).putExtra("panel", "SLEEP_TIMER"))
+                },
+                margins(top = 16)
+            )
+            addView(actionButton("Diagnostics / last ADB error") { showDiagnostics() }, margins(top = 16))
         }
 
         setContentView(
@@ -117,7 +129,7 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        registerReceiver(statusReceiver, IntentFilter(BridgeService.ACTION_STATUS), RECEIVER_NOT_EXPORTED)
+        registerBridgeReceiver(statusReceiver)
         mappingCount.text = mappingCountLabel()
     }
 
@@ -128,8 +140,27 @@ class MainActivity : Activity() {
 
     private fun refreshStatus() {
         val preferences = getSharedPreferences(BridgeService.PREFS, MODE_PRIVATE)
-        status.text = preferences.getString(BridgeService.STATUS, "Starting")
+        status.text = preferences.getString(BridgeService.STATUS, "Starting") + "\n" + SleepTimer.status(this)
         showAdb(preferences.getBoolean(BridgeService.ADB_CONNECTED, false))
+    }
+
+    private fun showDiagnostics() {
+        val preferences = getSharedPreferences(BridgeService.PREFS, MODE_PRIVATE)
+        val details = "2.0.2-mitv-diagnostic.2 / Kadb 2.1.5\n" +
+            "${Build.MODEL}; Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n\n" +
+            preferences.getString(BridgeService.STATUS, "Not started") + "\n\nLast failure:\n" +
+            preferences.getString(BridgeService.LAST_ERROR, "No ADB exception recorded.")
+        val content = label(details, 16f).apply { setPadding(28, 24, 28, 24) }
+        AlertDialog.Builder(this)
+            .setTitle("ADB diagnostics")
+            .setView(
+                ScrollView(this).apply {
+                    isFocusable = true
+                    addView(content)
+                }
+            )
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     private fun showAdb(connected: Boolean) {

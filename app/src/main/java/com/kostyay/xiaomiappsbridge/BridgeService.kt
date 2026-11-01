@@ -9,11 +9,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import com.flyfishxu.kadb.Kadb
 import com.flyfishxu.kadb.cert.KadbCert
 import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import com.flyfishxu.kadb.shell.AdbShellPacket
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 import okio.Path.Companion.toPath
 
@@ -33,18 +35,24 @@ class BridgeService : Service() {
 
     @Volatile private var listener: AutoCloseable? = null
 
+    @Volatile private var activeAdb: Kadb? = null
+
     override fun onCreate() {
         super.onCreate()
+        SleepTimer.restore(this)
         createChannel()
         startForeground(NOTIFICATION_ID, notification("Connecting to local ADB"))
-        KadbCert.configure(
-            OkioFilePrivateKeyStore(File(filesDir, "adbkey.pem").absolutePath.toPath())
+        Log.i(
+            TAG,
+            "Diagnostic build 2.0.2-mitv-diagnostic.2; Kadb 2.1.5; model=${Build.MODEL}; Android=${Build.VERSION.RELEASE}; SDK=${Build.VERSION.SDK_INT}"
         )
         worker.execute(::listen)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_TEST) {
+        if (intent?.action == SleepTimer.FIRE) {
+            controller.execute { SleepTimer.fire(this) }
+        } else if (intent?.action == ACTION_TEST) {
             mode = Mode.TEST
             updateStatus("Test mode: press a mapped button")
         } else if (intent?.action == ACTION_CAPTURE) {
@@ -63,39 +71,68 @@ class BridgeService : Service() {
         stopped = true
         updateStatus("Bridge stopped", false)
         runCatching { listener?.close() }
+        runCatching { activeAdb?.close() }
         worker.shutdownNow()
         controller.shutdownNow()
         super.onDestroy()
     }
 
     private fun listen() {
+        var identityReady = false
         while (!stopped) {
+            var phase = "ADB identity"
             try {
+                if (!identityReady) {
+                    updateStatus("Preparing local ADB RSA identity", false)
+                    KadbCert.configure(
+                        OkioFilePrivateKeyStore(File(filesDir, "adbkey.pem").absolutePath.toPath())
+                    )
+                    KadbCert.ensureReady()
+                    identityReady = true
+                    Log.i(TAG, "ADB identity ready (private key is never logged)")
+                }
+                phase = "Connect / RSA authorization"
+                updateStatus(
+                    "Connecting to ADB. Allow this app's RSA key if prompted; the PC has a separate key.",
+                    false
+                )
+                Log.i(TAG, "Connecting to local TCP 5555; waiting for ADB handshake")
                 Kadb.create("127.0.0.1", 5555, connectTimeout = 5_000).use { adb ->
-                    adb.shell("true")
+                    activeAdb = adb
+                    if (stopped) return
+                    val probe = adb.shell("true")
+                    check(probe.exitCode == 0) { "ADB shell probe failed: ${probe.exitCode}" }
+                    Log.i(TAG, "ADB handshake and shell probe succeeded")
+                    phase = "Key event listener"
+                    output.setLength(0)
                     updateStatus("Working: ${loadMappings().size} key mapping(s)", true)
                     adb.openShell("exec getevent -lt | grep ' EV_KEY '").use { shell ->
                         listener = shell
                         while (!stopped) {
                             when (val packet = shell.read()) {
                                 is AdbShellPacket.StdOut -> consume(packet.payload)
-                                is AdbShellPacket.Exit -> break
-                                is AdbShellPacket.StdError -> Unit
+
+                                is AdbShellPacket.Exit -> throw IOException(
+                                    "Key listener exited: ${packet.payload.firstOrNull()?.toInt()?.and(255)}"
+                                )
+
+                                is AdbShellPacket.StdError -> Log.w(TAG, "getevent stderr: ${String(packet.payload)}")
                             }
                         }
                     }
                 }
             } catch (error: Exception) {
                 if (!stopped) {
-                    updateStatus("Waiting for ADB: ${error.javaClass.simpleName}", false)
+                    reportFailure(phase, error, false)
                     try {
-                        Thread.sleep(1_000)
+                        Thread.sleep(5_000)
                     } catch (_: InterruptedException) {
                         return
                     }
                 }
             } finally {
                 listener = null
+                activeAdb = null
             }
         }
     }
@@ -131,12 +168,32 @@ class BridgeService : Service() {
         val command = mapping.command() ?: return
         runCatching {
             Kadb.create("127.0.0.1", 5555, connectTimeout = 5_000).use { adb ->
-                adb.shell(command)
+                val response = adb.shell(command)
+                check(response.exitCode == 0) { "Mapped command exited: ${response.exitCode}; ${response.allOutput}" }
             }
             updateStatus("Ran mapping for $key", true)
         }.onFailure {
-            updateStatus("Action failed: ${it.javaClass.simpleName}", true)
+            if (!stopped) reportFailure("Mapped action $key", it, true)
         }
+    }
+
+    private fun reportFailure(phase: String, error: Throwable, connected: Boolean) {
+        Log.e(TAG, "$phase failed: ${error.message}", error)
+        val causes = generateSequence(error) { it.cause }.take(8).toList()
+        val detail = causes.joinToString(" → ") { "${it.javaClass.simpleName}: ${it.message ?: "no message"}" }
+        val hint = when {
+            phase == "ADB identity" -> "Local RSA key/certificate failure before authorization. See Diagnostics."
+
+            causes.any {
+                it.javaClass.simpleName.contains("Auth", true)
+            } -> "Allow this app's RSA key on the TV. PC authorization is separate."
+
+            else -> "Check ADB TCP 5555 and TV authorization. See Diagnostics."
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString(LAST_ERROR, "$phase\n$detail\n\n${Log.getStackTraceString(error)}")
+            .apply()
+        updateStatus("$phase: ${detail.take(240)}\n$hint", connected)
     }
 
     private fun updateStatus(text: String, adbConnected: Boolean? = null) {
@@ -176,6 +233,8 @@ class BridgeService : Service() {
         const val ACTION_STATUS = "com.kostyay.xiaomiappsbridge.STATUS"
         const val PREFS = "bridge"
         const val STATUS = "status"
+        const val LAST_ERROR = "last_error"
+        private const val TAG = "TVKeyMapperADB"
         const val ADB_CONNECTED = "adb_connected"
         const val CAPTURED_KEY = "captured_key"
         const val MAPPINGS = "mappings"

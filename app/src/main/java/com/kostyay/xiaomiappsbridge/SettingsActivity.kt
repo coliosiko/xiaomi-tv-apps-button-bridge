@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
@@ -55,7 +54,7 @@ class SettingsActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        registerReceiver(statusReceiver, IntentFilter(BridgeService.ACTION_STATUS), RECEIVER_NOT_EXPORTED)
+        registerBridgeReceiver(statusReceiver)
         consumeCapturedKey()
     }
 
@@ -132,6 +131,8 @@ class SettingsActivity : Activity() {
             .distinctBy { it.action }
             .sortedBy { it.label.lowercase() }
         val presets = listOf(
+            KeyMapping(key, "Recent apps panel", MappingKind.RECENTS),
+            KeyMapping(key, "Sleep timer", MappingKind.SLEEP_TIMER),
             KeyMapping(key, "Projectivy apps panel", MappingKind.PROJECTIVY),
             intentMapping(key, "Android settings", Settings.ACTION_SETTINGS),
             intentMapping(key, "Wi-Fi settings", Settings.ACTION_WIFI_SETTINGS),

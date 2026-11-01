@@ -1,112 +1,116 @@
-# TV Key Mapper
+# TV Key Mapper — Xiaomi Android TV 11 fork
 
-This Android TV app maps remote-control keys to apps and Android intents. It
-has an ADB client in the app and starts again after the TV starts.
+**Неофициальный форк [TV Key Mapper от Kostya](https://github.com/kostyay/xiaomi-tv-apps-button-bridge).**
+Основа: upstream **[v2.0.0](https://github.com/kostyay/xiaomi-tv-apps-button-bridge/tree/v2.0.0)**,
+коммит `8d1dd584670a1f7a1734b7f0b53bda2f49252784`.
+Автор оригинального приложения — **[kostyay](https://github.com/kostyay)**; исходная история и MIT-лицензия сохранены.
+Этот форк добавляет совместимость диагностической сборки с Android TV 11, собственную панель недавних приложений и таймер сна.
 
-![Bridge connected](docs/main-screen.png)
+[English](README.en.md) · [Отличия](docs/CHANGES.md) · [Сборка и подпись](docs/BUILDING.md) · [Проверки](docs/TESTING.md) · [Оригинальный README](docs/UPSTREAM-README.md)
 
-The screen shows the ADB connection state. Open **Key mappings**, capture a
-remote key, and select an installed TV app or a common Android action. The
-default mapping is `KEY_CHAT` (the Xiaomi Apps button) to the Projectivy apps
-panel. **Test a mapped button** waits for one press and shows a result without
-opening its action.
+## Для какого телевизора
 
-Key discovery is automatic. The app listens to all input devices and accepts
-all reported `KEY_*` and `BTN_*` names. It does not contain a list for Netflix,
-YouTube, or other remote brands.
+Форк проверялся на **Xiaomi MiTV-MOOQ1 / Android TV 11 (API 30)**.
+Оригинальный проект ориентирован на **MiTV-AFMU0 / Android TV 14** и использует кнопку `KEY_CHAT`.
+Поведение и названия кнопок на других моделях могут отличаться.
 
-![Key mapping settings](docs/key-mappings.png)
+| Параметр | Значение | Что означает |
+|---|---|---|
+| Проверенная ОС | Android TV 11, API 30 | Фактическое устройство, на котором проверялся форк |
+| `minSdk` | **26** — Android 8.0 | Нижняя граница установки, не гарантия проверки на всех таких ТВ |
+| `targetSdk` | **36** — Android 16 | Целевая версия правил Android; это **не минимальная ОС** |
+| `compileSdk` | **37** | SDK для компиляции; Android TV 11 не требуется обновлять до API 37 |
+| Java | JDK 17 | Для сборки на компьютере |
+| Gradle / AGP / Kotlin | 9.3.1 / 9.1.1 / 2.3.20 | Зафиксированная среда сборки |
+| ADB-библиотека | **Kadb 2.1.5** | Локальное соединение с ADB ТВ |
+| Package | `com.kostyay.xiaomiappsbridge.diagnostic` | Отдельный от оригинального приложения пакет |
+| Версия APK | `2.0.2-mitv-diagnostic.2`, code **4** | Текущая диагностическая сборка |
 
-Advanced users can enter a custom Android intent action, data URI, or exported
-component. Android does not provide one complete list of intents. The app lists
-installed TV apps and useful system settings to help users find actions. An
-app's developer documentation is the best source for its deep links and custom
-actions.
+**Root не нужен.** Нужны включённый ADB TCP на порту 5555 и разрешение собственного RSA-ключа приложения.
+Приложение соединяется с `127.0.0.1:5555`; компьютер не требуется держать подключённым после установки.
 
-It is made for this tested configuration:
+## Что умеет
 
-- Xiaomi Mi TV model `MiTV-AFMU0` (`twilight`)
-- Android TV 14
-- Xiaomi Apps button: `KEY_CHAT`
-- Projectivy Launcher package: `com.spocky.projengmenu`
+- Захватывать `KEY_*` / `BTN_*` кнопки пульта и назначать приложения, Projectivy apps panel или custom intents.
+- **Recent apps panel**: собственная TV-панель с названиями и иконками, навигацией стрелками, запуском по OK и закрытием по Back.
+  Получает задачи через `dumpsys activity recents`, сохраняет порядок недавности, убирает дубликаты пакетов, mapper и известные launcher-пакеты.
+  Это **недавние приложения**, а не точный список живых процессов. Выбор открывает пакет; восстановление конкретного окна не гарантируется.
+- **Sleep timer**: 30 / 60 / 90 / 120 минут и Cancel timer. Остаток виден в меню и статусе mapper.
+  Использует AlarmManager и локальный ADB `input keyevent 223` (`KEYCODE_SLEEP`).
+- Автозапуск bridge после загрузки, переподключение к ADB, экран текущего подключения и подробная диагностика ошибок.
 
-## Install
+Таймер сохраняется после закрытия интерфейса и хранит срок отдельно от маппингов. Срок привязан к времени с загрузки, поэтому перевод часов не меняет отсчёт.
+При перезагрузке телевизора таймер очищается. Восстановление после перезапуска процесса предусмотрено кодом, но отдельно на ТВ не проверялось.
+Принудительная остановка приложения отменяет системные будильники до следующего запуска. При недоступном ADB в момент срабатывания статус покажет ошибку;
+автоматического повторного выключения позже нет.
 
-1. Install Projectivy Launcher and make it your default launcher.
-2. Enable Developer options and ADB network debugging on the TV.
-3. Connect a computer to the TV and install the APK:
+## Установка и обновление
 
-   ```sh
-   adb connect TV_IP:5555
-   adb install XiaomiAppsButtonBridge.apk
-   ```
+Скачайте [готовый диагностический APK](downloads/TV-Key-Mapper-2.0.2-mitv-diagnostic.2.apk) (на странице файла нажмите Download raw file). [SHA-256](downloads/SHA256SUMS.txt).
+Перед установкой включите Developer options и сетевую ADB-отладку на ТВ.
 
-4. Open **TV Key Mapper** on the TV.
-5. When the TV shows an ADB authorization message, select **Always allow** and
-   then select **Allow**.
-
-The app saves its own ADB key. It starts a foreground service after each TV
-restart and waits for local ADB to become available. You do not need to keep a
-computer connected.
-
-Use the app's **Stop bridge** button if you must stop it.
-
-## Build
-
-Install JDK 17 and Android SDK Platform 36. Then run:
-
-```sh
-./gradlew assembleDebug
+```powershell
+.\adb.exe connect TV_IP:5555
+.\adb.exe install -r .\TV-Key-Mapper-2.0.2-mitv-diagnostic.2.apk
 ```
 
-The APK is at `app/build/outputs/apk/debug/app-debug.apk`.
+1. Откройте **TV Key Mapper Diagnostic** из списка приложений ТВ.
+2. Разрешите RSA-ключ приложения, выбрав Always allow, если появится запрос. Разрешение ключа компьютера не заменяет разрешение ключа mapper.
+3. Дождитесь **ADB CONNECTED**.
+4. Откройте **Key mappings → Add mapping**, нажмите кнопку пульта и выберите действие.
 
-## Releases
+| Кнопка на проверенном MiTV-MOOQ1 | Событие | Рекомендуемое действие |
+|---|---|---|
+| Xiaomi ▦ | `KEY_WWW` | Recent apps panel |
+| ИВИ | `KEY_LOGOFF` | Sleep timer |
+| OKKO | `KEY_COFFEE` | Ваш VPN |
+| VK Видео | `KEY_SPREADSHEET` | VK Видео |
+| RuTube | `KEY_DATABASE` | YouTube |
+| KION / Wink | `KEY_PVR` / `KEY_VCR` | На выбор |
 
-This project uses [Semantic Versioning](https://semver.org/). Release tags must
-use the form `vMAJOR.MINOR.PATCH`, such as `v2.1.0`. A published GitHub Release
-starts a workflow that:
+Если запись уже существует, откройте её и смените действие. Автоматически пользовательские назначения не перезаписываются.
+Стандартное `KEY_CHAT → Projectivy apps panel` сохранено для совместимости с оригиналом; на MiTV-MOOQ1 эта запись может не использоваться.
 
-1. Validates the tag.
-2. Runs Kotlin lint, Android lint, and unit tests.
-3. Builds and verifies a signed release APK.
-4. Adds the APK and its SHA-256 checksum to the GitHub Release.
+Обновление diagnostic.1 → diagnostic.2 через `adb install -r` проверено: маппинги и ADB-ключ сохранились.
+**Не удаляйте приложение перед обновлением.** Нужны тот же package и тот же сертификат подписи.
+Опубликованный диагностический APK подписан локальным debug-ключом; обычная сборка на другом компьютере или в CI получит другую подпись и не сможет обновить его поверх.
+Подробности — в [инструкции сборки](docs/BUILDING.md).
 
-Create a release with GitHub CLI:
+Форк устанавливается рядом с оригинальным приложением. Если оригинал тоже установлен, остановите его bridge, чтобы два сервиса не выполняли действия одновременно.
 
-```sh
-gh release create v2.1.0 --generate-notes --title v2.1.0
+## Ограничения и диагностика
+
+- Mapper наблюдает события через `getevent`, **не подавляя исходное действие кнопки**. Фирменное приложение или системный обработчик Xiaomi может открываться одновременно с назначенным действием.
+- Настройка системных обработчиков пульта зависит от прошивки. Форк сам не отключает системные пакеты и не меняет launcher по умолчанию.
+- Список recents не зависит от наличия штатного Recents UI. На проверенном ТВ `input keyevent 187` не показывал системную панель.
+- Точная команда таймера сна не найдена в `cmd power help` проверенной прошивки; собственный отсчёт заканчивается стандартной командой сна 223.
+- Назначение сна не равнозначно отключению питания от сети. Реакция HDMI-CEC и периферии зависит от ТВ.
+- Полный отсчёт до сна, восстановление после смерти процесса и сброс после reboot ещё требуют отдельного испытания на ТВ. См. [границы выполненных проверок](docs/TESTING.md).
+
+В **Diagnostics / last ADB error** доступны этап соединения, цепочка причин и stack trace.
+Последняя ошибка сохраняется и после восстановления связи — сверяйте её с текущим статусом.
+
+```powershell
+.\adb.exe logcat -d -v threadtime 'TVKeyMapperADB:V' 'AndroidRuntime:E' '*:S'
 ```
 
-Release signing uses the `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`,
-`RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD` repository secrets. Never add
-the signing key to Git.
+Перед публикацией логов удалите адреса устройств, имена аккаунтов и другие личные данные.
 
-## How it works
+## Быстрая сборка
 
-The service connects to `127.0.0.1:5555` and runs `getevent` as the authorized
-ADB shell user. It filters the stream to key events. When it reads a configured
-key, it runs the selected action. The default Projectivy target uses the
-`tv.projectivy.ALL_APPS` action.
+Установите JDK 17, Android SDK Platform 37 и Build Tools 36.0.0; задайте путь SDK в `local.properties` либо `ANDROID_HOME`.
 
-This method observes input events but does not block the original TV action.
-Some mapped buttons can therefore do both the original action and the mapped
-action. This also means that a branded app can cover the mapping screen during
-key capture. Return to TV Key Mapper to finish the saved mapping. A different
-TV can also report different key names.
-
-## Code checks
-
-Run all source and Android checks:
-
-```sh
-./gradlew ktlintCheck lintDebug testDebugUnitTest
+```powershell
+.\gradlew.bat ktlintCheck lintDebug testDebugUnitTest assembleDebug
 ```
 
-Use `./gradlew ktlintFormat` to apply safe Kotlin formatting changes. The build
-workflow runs both checks before it creates the APK.
+Результат: `app/build/outputs/apk/debug/app-debug.apk`. Полная инструкция, Linux/macOS и подпись — в [BUILDING.md](docs/BUILDING.md).
 
-## License
+## Благодарности и лицензии
 
-MIT. The app uses [Kadb](https://github.com/flyfishxu/Kadb), which has the
-Apache-2.0 license.
+- **[Kostya / kostyay — оригинальный TV Key Mapper](https://github.com/kostyay/xiaomi-tv-apps-button-bridge)**: основа приложения, UI, перехват событий через ADB и система назначений. **MIT**, оригинальный copyright сохранён в [LICENSE](LICENSE).
+- **[flyfishxu / Kadb](https://github.com/flyfishxu/Kadb)**: ADB-библиотека, используемая в версии **2.1.5**, **Apache-2.0**.
+- [Projectivy Launcher](https://play.google.com/store/apps/details?id=com.spocky.projengmenu): совместимое действие `tv.projectivy.ALL_APPS`; проект не связан с автором Projectivy или Xiaomi.
+- Android: [документация KEYCODE_SLEEP](https://developer.android.com/reference/android/view/KeyEvent#KEYCODE_SLEEP).
+
+Форк поддерживается в аккаунте [coliosiko](https://github.com/coliosiko). Вопросы о специфичных для этого форка изменениях адресуйте сюда; автор оригинала за них не отвечает.

@@ -6,7 +6,12 @@ plugins {
 
 android {
     namespace = "com.kostyay.xiaomiappsbridge"
-    compileSdk = 36
+    compileSdk = 37
+
+    packaging {
+        resources.merges += setOf("META-INF/LICENSE*", "META-INF/NOTICE*")
+        resources.excludes += "META-INF/versions/**/OSGI-INF/MANIFEST.MF"
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -14,11 +19,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.kostyay.xiaomiappsbridge"
+        applicationId = "com.kostyay.xiaomiappsbridge.diagnostic"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("VERSION_CODE").getOrElse("2").toInt()
-        versionName = providers.gradleProperty("VERSION_NAME").getOrElse("2.0.0")
+        versionCode = providers.gradleProperty("VERSION_CODE").getOrElse("4").toInt()
+        versionName = providers.gradleProperty("VERSION_NAME").getOrElse("2.0.2-mitv-diagnostic.2")
     }
 
     val releaseKeystore = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
@@ -44,5 +49,6 @@ ktlint {
 }
 
 dependencies {
-    implementation("com.flyfishxu:kadb:2.1.1")
+    testImplementation("junit:junit:4.13.2")
+    implementation("com.flyfishxu:kadb:2.1.5")
 }

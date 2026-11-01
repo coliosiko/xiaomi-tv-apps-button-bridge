@@ -6,6 +6,9 @@ import android.content.Intent
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) context.startBridge()
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+            SleepTimer.cancel(context, "Timer cleared after reboot")
+            context.startBridge()
+        }
     }
 }

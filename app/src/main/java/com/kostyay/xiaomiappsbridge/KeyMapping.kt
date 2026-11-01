@@ -5,7 +5,7 @@ import android.content.Intent
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class MappingKind { PROJECTIVY, APP, INTENT }
+enum class MappingKind { PROJECTIVY, APP, INTENT, RECENTS, SLEEP_TIMER }
 
 data class KeyMapping(
     val key: String,
@@ -16,6 +16,9 @@ data class KeyMapping(
     val component: String = ""
 ) {
     fun command(): String? = when (kind) {
+        MappingKind.RECENTS, MappingKind.SLEEP_TIMER ->
+            "am start -n com.kostyay.xiaomiappsbridge.diagnostic/com.kostyay.xiaomiappsbridge.PanelActivity --es panel ${kind.name}"
+
         MappingKind.PROJECTIVY ->
             "am start -a tv.projectivy.ALL_APPS -c ${Intent.CATEGORY_DEFAULT}"
 
